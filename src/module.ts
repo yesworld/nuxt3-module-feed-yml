@@ -1,19 +1,43 @@
-import { defineNuxtModule, addPlugin, createResolver } from '@nuxt/kit'
+import { defineNuxtModule, addServerHandler, createResolver, addPrerenderRoutes, addTemplate } from '@nuxt/kit'
+import type { ModuleOptions, SourceOptions } from './types'
 
-// Module options TypeScript interface definition
-export interface ModuleOptions {}
+export * from './types'
 
 export default defineNuxtModule<ModuleOptions>({
   meta: {
-    name: 'my-module',
-    configKey: 'myModule',
+    name: 'nuxt3-module-feed-yml',
+    configKey: 'feedYml'
   },
-  // Default configuration options of the Nuxt module
-  defaults: {},
-  setup(_options, _nuxt) {
+  defaults: {
+    sources: []
+  },
+  setup(options, nuxt) {
     const resolver = createResolver(import.meta.url)
+    const feedOptions: Record<string, SourceOptions> = {}
 
-    // Do not add the extension since the `.ts` will be transpiled to `.mjs` after `npm run prepack`
-    addPlugin(resolver.resolve('./runtime/plugin'))
-  },
+    for (const feed of options.sources) {
+      addServerHandler({
+        route: feed.path,
+        handler: resolver.resolve('runtime/server/feed-yml'),
+        method: 'get'
+      })
+
+      // Handle SSG
+      if (nuxt.options._generate) {
+        addPrerenderRoutes([feed.path])
+      }
+
+      feedOptions[feed.path] = {
+        path: feed.path,
+        cacheTime: feed.cacheTime || 60 * 15 // Default cache time 15 minutes
+      }
+    }
+
+    nuxt.options.runtimeConfig.public.feedYml = options
+    nuxt.options.alias['#feedYml'] = (addTemplate({
+      filename: 'nuxt3-feed-yml-options.mjs',
+      write: true,
+      getContents: () => `export default ${JSON.stringify(feedOptions, null, 2)}`
+    }).dst || '')
+  }
 })
